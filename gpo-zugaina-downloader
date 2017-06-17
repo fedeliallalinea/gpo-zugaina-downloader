@@ -1,0 +1,167 @@
+#!/bin/bash
+
+GREEN_BOLD="\e[1;32m"
+RED_BOLD="\e[1;31m"
+YELLOW_BOLD="\e[1;33m"
+WHITE="\e[0;37m"
+BLUE_BOLD="\e[1;34m"
+GREEN_BOLD="\e[1;32m"
+COLOR_OFF="\e[0m"
+
+function info {
+	echo -e " ${GREEN_BOLD}* ${COLOR_OFF}${1}"
+}
+
+function error {
+	echo -e " ${RED_BOLD}* ${COLOR_OFF}${1}"
+}
+
+function warning {
+	echo -e " ${YELLOW_BOLD}* ${COLOR_OFF}${1}"
+}
+
+function __usage {
+	echo "Usage: $(basename $0) [OPTIONS] PREFIX OVERLAY [CATEGORY_PACKAGE]"
+	echo "Download overlay, category or package ebuilds from gpo.zugaina.org"
+	echo ""
+	echo "    PREFIX               destination of downloaded files"
+	echo "    OVERLAY              name of overlay"
+	echo "    CATEGORY_PACKAGE     category or category/package that you want download"
+	echo ""
+	echo "OPTIONS:"
+	echo "    -v, --verbose   tree print of downloaded files"
+	echo "    -h, --help      display this help and exit"
+	echo ""
+	echo "Examples:"
+	echo "    $(basename $0) my_prefix_dir kde                      ->  for download all ebuilds from kde overlay" 
+	echo "    $(basename $0) my_prefix_dir kde kde-misc             ->  for download kde-misc category ebuilds from kde overlay"
+	echo "    $(basename $0) my_prefix_dir kde kde-misc/kdeconnect  ->  for download all kdeconnect package ebuilds from kde overlay"
+    exit 1
+}
+
+function __get_list {
+	curl -sL "${1}" | grep -v Parent | awk 'BEGIN{
+	RS="</a>"
+	IGNORECASE=1
+	}
+	{
+	for(o=1;o<=NF;o++){
+		if ( $o ~ /href/){
+		gsub(/.*href=\042/,"",$o)
+		gsub(/\042.*/,"",$o)
+		print $(o)
+		}
+	}
+	}'
+}
+
+function __check_eclass {
+	if [[ "${1}" == *.ebuild ]]; then
+		local ECLASSES=$(grep inherit -A1 "${1}" | sed 's/inherit//;s/\\//')
+		for ECLASS in ${ECLASSES}; do
+			if [ ! -f /usr/portage/eclass/"${ECLASS}.eclass" ]; then
+				[ ! -d "${PREFIX%/}/eclass" ] && mkdir "${PREFIX%/}/eclass"
+				curl -s "${URL%/}/${OVERLAY%/}/eclass/${ECLASS}.eclass" -o "${PREFIX%/}/eclass/${ECLASS}.eclass"
+			fi
+		done;
+	fi
+}
+
+function __print {
+	if [[ ${VERBOSE} -eq 1 ]]; then
+		local CATEGORY_PACKAGE="${1/$PREFIX\//}"
+		local OCCURENCE=$(echo ${CATEGORY_PACKAGE} | tr -cd '/' | wc -c)
+		local TREE="|--"
+		
+		if [[ $((OCCURENCE - $IS_PACKAGE)) -gt 0 ]]; then
+			for i in $(seq 0 $((OCCURENCE - 0))); do
+				TREE="|   ${TREE}"
+			done
+		elif [[ ${IS_PACKAGE} -eq 1 ]]; then
+			echo -e "${TREE} $(dirname ${CATEGORY_PACKAGE})"
+			TREE="|   ${TREE}"
+		fi
+		
+		echo -e "${TREE} $(basename ${CATEGORY_PACKAGE})"
+	fi
+}
+
+function __get_files_rec {
+	local URL="${1}"
+	local MYPATH="${2}"
+	
+	__print "${MYPATH%/}" 
+	for FILE in $(__get_list ${URL}); do
+		local IS_DIR=$(curl -s -I "${URL%/}/${FILE}" | grep "^Content-Type: text/html")
+		if [[ -z "${IS_DIR// }" ]]; then
+			curl -s "${URL%/}/${FILE}" -o "${MYPATH%/}/${FILE}"
+			__print "${MYPATH%/}/${FILE}" 
+			__check_eclass "${MYPATH%/}/${FILE}"
+		else
+			mkdir -p "${MYPATH%/}/${FILE}"
+			__get_files_rec "${URL%/}/${FILE}" "${MYPATH%/}/${FILE}"
+		fi
+	done
+}
+
+[ $# -eq 0 ] && __usage
+SHORT="hv"
+LONG="help,verbose"
+
+PARSED=$(getopt --options $SHORT --longoptions $LONG --name "$0" -- "$@")
+eval set -- "$PARSED"
+
+while true; do
+  case "${1}" in
+	-v|--verbose)
+		VERBOSE=1
+		OVERLAY="${4}"
+		PACKAGE="${5}"
+		PREFIX="${3}"
+		break
+		;;
+	-h|--help) 
+		__usage
+		exit 0
+		;;
+	*) 
+		VERBOSE=0
+		OVERLAY="${3}"
+		PACKAGE="${4}"
+		PREFIX="${2}"
+		break
+		;;
+  esac
+done
+
+URL="http://data.gpo.zugaina.org/"
+
+if [ -z "${PREFIX}" ] || [ -z "${OVERLAY}" ]; then
+	__usage
+	exit 0
+fi
+
+if [ ! -d "${PREFIX}" ]; then 
+	error "Prefix directory \"${PREFIX}\" not exists" 
+	exit 1
+else
+	USER_PREFIX=$(stat -c %U ${PREFIX})
+	if [[ "$USER_PREFIX" != $(whoami) ]]; then
+		warning "Prefix ${PREFIX} need root permission" 
+		exit 1
+	fi
+fi
+
+if [ $(curl -s -o /dev/null -w "%{http_code}" "${URL%/}/${OVERLAY}") -eq 404 ]; then
+	error "Overlay $OVERLAY not exists"
+	exit 1
+fi
+
+if [ $(curl -s -o /dev/null -w "%{http_code}" "${URL%/}/${OVERLAY%/}/${PACKAGE}") -eq 404 ]; then
+	error "Category or package $PACKAGE not exists"
+	exit 1
+fi
+
+[ "$(echo ${PACKAGE%/} | tr -cd '/' | wc -c)" -gt 0 ] && IS_PACKAGE=1 || IS_PACKAGE=0
+mkdir -p "${PREFIX%/}/${PACKAGE}"
+__get_files_rec "${URL%/}/${OVERLAY%/}/${PACKAGE}" "${PREFIX%/}/${PACKAGE}"
