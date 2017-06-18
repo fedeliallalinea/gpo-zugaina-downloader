@@ -108,7 +108,7 @@ function __get_files_rec {
 	local URL="${1}"
 	local MYPATH="${2}"
 	
-	__print "${MYPATH%/}" 
+	[[ "${MYPATH%/}" != "${PREFIX%/}" ]] && __print "${MYPATH%/}" 
 	for FILE in $(__get_list ${URL}); do
 		local IS_DIR=$(curl -s -I "${URL%/}/${FILE}" | grep "^Content-Type: text/html")
 		if [[ -z "${IS_DIR// }" ]]; then
@@ -137,7 +137,7 @@ while true; do
 		VERBOSE=1
 		OVERLAY="${4}"
 		PACKAGE="${5}"
-		PREFIX="${3}"
+		PREFIX="${3%/}/"
 		break
 		;;
 	-h|--help) 
@@ -148,7 +148,7 @@ while true; do
 		VERBOSE=0
 		OVERLAY="${3}"
 		PACKAGE="${4}"
-		PREFIX="${2}"
+		PREFIX="${2%/}/"
 		break
 		;;
   esac
@@ -187,4 +187,4 @@ fi
 mkdir -p "${PREFIX%/}/${PACKAGE}"
 __get_files_rec "${URL%/}/${OVERLAY%/}/${PACKAGE}" "${PREFIX%/}/${PACKAGE}"
 ECLASSES=$(echo $ECLASSES | xargs -n1 | sort -u | xargs)
-[ ! -z "${ECLASSES}" ] && __get_eclass
+[ ! -z "${ECLASSES}" ] && [ ! -z "${PACKAGE}" ] && __get_eclass
