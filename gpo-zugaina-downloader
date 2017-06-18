@@ -56,21 +56,39 @@ function __get_list {
 }
 
 function __check_eclass {
+	local RES=""
+	
 	if [[ "${1}" == *.ebuild ]]; then
-		local ECLASSES=$(grep inherit -A1 "${1}" | sed 's/inherit//;s/\\//')
-		for ECLASS in ${ECLASSES}; do
+		local LIST=$(grep inherit -A1 "${1}" | sed 's/inherit//;s/\\//')
+		
+		for ECLASS in ${LIST}; do
 			if [ ! -f /usr/portage/eclass/"${ECLASS}.eclass" ]; then
-				[ ! -d "${PREFIX%/}/eclass" ] && mkdir "${PREFIX%/}/eclass"
-				curl -s "${URL%/}/${OVERLAY%/}/eclass/${ECLASS}.eclass" -o "${PREFIX%/}/eclass/${ECLASS}.eclass"
+				#[ ! -d "${PREFIX%/}/eclass" ] && mkdir "${PREFIX%/}/eclass"
+				#curl -s "${URL%/}/${OVERLAY%/}/eclass/${ECLASS}.eclass" -o "${PREFIX%/}/eclass/${ECLASS}.eclass"
+				RES="${RES} ${ECLASS}.eclass"
 			fi
 		done;
 	fi
+	echo "${RES}"
+}
+
+function __get_eclass {
+	[ ! -d "${PREFIX%/}/eclass" ] && mkdir "${PREFIX%/}/eclass"
+	if [[ ${VERBOSE} -eq 1 ]]; then
+		echo "|-- eclass"
+	fi
+	for ECLASS in ${ECLASSES}; do
+		if [[ ${VERBOSE} -eq 1 ]]; then
+			echo "|   |-- ${ECLASS}"
+		fi
+		curl -s "${URL%/}/${OVERLAY%/}/eclass/${ECLASS}" -o "${PREFIX%/}/eclass/${ECLASS}"
+	done;
 }
 
 function __print {
 	if [[ ${VERBOSE} -eq 1 ]]; then
-		local CATEGORY_PACKAGE="${1/$PREFIX\//}"
-		local OCCURENCE=$(echo ${CATEGORY_PACKAGE} | tr -cd '/' | wc -c)
+		local CATEGORY_PACKAGE="${1/$PREFIX/}"
+		local OCCURENCE=$(echo ${CATEGORY_PACKAGE%/} | tr -cd '/' | wc -c)
 		local TREE="|--"
 		
 		if [[ $((OCCURENCE - $IS_PACKAGE)) -gt 0 ]]; then
@@ -96,12 +114,14 @@ function __get_files_rec {
 		if [[ -z "${IS_DIR// }" ]]; then
 			curl -s "${URL%/}/${FILE}" -o "${MYPATH%/}/${FILE}"
 			__print "${MYPATH%/}/${FILE}" 
-			__check_eclass "${MYPATH%/}/${FILE}"
+			ECLASSES="${ECLASSES} $(__check_eclass "${MYPATH%/}/${FILE}")"
 		else
 			mkdir -p "${MYPATH%/}/${FILE}"
 			__get_files_rec "${URL%/}/${FILE}" "${MYPATH%/}/${FILE}"
 		fi
 	done
+	
+
 }
 
 [ $# -eq 0 ] && __usage
@@ -135,6 +155,7 @@ while true; do
 done
 
 URL="http://data.gpo.zugaina.org/"
+ECLASSES=""
 
 if [ -z "${PREFIX}" ] || [ -z "${OVERLAY}" ]; then
 	__usage
@@ -165,3 +186,5 @@ fi
 [ "$(echo ${PACKAGE%/} | tr -cd '/' | wc -c)" -gt 0 ] && IS_PACKAGE=1 || IS_PACKAGE=0
 mkdir -p "${PREFIX%/}/${PACKAGE}"
 __get_files_rec "${URL%/}/${OVERLAY%/}/${PACKAGE}" "${PREFIX%/}/${PACKAGE}"
+ECLASSES=$(echo $ECLASSES | xargs -n1 | sort -u | xargs)
+[ ! -z "${ECLASSES}" ] && __get_eclass
