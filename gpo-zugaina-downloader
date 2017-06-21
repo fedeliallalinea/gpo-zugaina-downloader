@@ -30,6 +30,7 @@ function __usage {
 	echo ""
 	echo "OPTIONS:"
 	echo "    -v, --verbose   tree print of downloaded files"
+	echo "    -p, --pretend   display what will downloaded"
 	echo "    -h, --help      display this help and exit"
 	echo ""
 	echo "Examples:"
@@ -59,7 +60,7 @@ function __check_eclass {
 	local RES=""
 	
 	if [[ "${1}" == *.ebuild ]]; then
-		local LIST=$(grep inherit -A1 "${1}" | sed 's/inherit//;s/\\//')
+		local LIST=$(curl -s "${1}" | grep inherit -A1 | sed 's/inherit//;s/\\//')
 		
 		for ECLASS in ${LIST}; do
 			if [ ! -f /usr/portage/eclass/"${ECLASS}.eclass" ]; then
@@ -72,8 +73,16 @@ function __check_eclass {
 	echo "${RES}"
 }
 
+function __curl {
+	[ $DRY_RUN -eq 0 ] && curl $@
+}
+
+function __mkdir {
+	[ $DRY_RUN -eq 0 ] && mkdir $@
+}
+
 function __get_eclass {
-	[ ! -d "${PREFIX%/}/eclass" ] && mkdir "${PREFIX%/}/eclass"
+	[ ! -d "${PREFIX%/}/eclass" ] && __mkdir "${PREFIX%/}/eclass"
 	if [[ ${VERBOSE} -eq 1 ]]; then
 		echo "|-- eclass"
 	fi
@@ -81,7 +90,7 @@ function __get_eclass {
 		if [[ ${VERBOSE} -eq 1 ]]; then
 			echo "|   |-- ${ECLASS}"
 		fi
-		curl -s "${URL%/}/${OVERLAY%/}/eclass/${ECLASS}" -o "${PREFIX%/}/eclass/${ECLASS}"
+		__curl -s "${URL%/}/${OVERLAY%/}/eclass/${ECLASS}" -o "${PREFIX%/}/eclass/${ECLASS}"
 	done;
 }
 
@@ -112,11 +121,11 @@ function __get_files_rec {
 	for FILE in $(__get_list ${URL}); do
 		local IS_DIR=$(curl -s -I "${URL%/}/${FILE}" | grep "^Content-Type: text/html")
 		if [[ -z "${IS_DIR// }" ]]; then
-			curl -s "${URL%/}/${FILE}" -o "${MYPATH%/}/${FILE}"
+			__curl -s "${URL%/}/${FILE}" -o "${MYPATH%/}/${FILE}"
 			__print "${MYPATH%/}/${FILE}" 
-			ECLASSES="${ECLASSES} $(__check_eclass "${MYPATH%/}/${FILE}")"
+			ECLASSES="${ECLASSES} $(__check_eclass "${URL%/}/${FILE}")" #"${MYPATH%/}/${FILE}")"
 		else
-			mkdir -p "${MYPATH%/}/${FILE}"
+ 			__mkdir -p "${MYPATH%/}/${FILE}"
 			__get_files_rec "${URL%/}/${FILE}" "${MYPATH%/}/${FILE}"
 		fi
 	done
@@ -125,15 +134,23 @@ function __get_files_rec {
 }
 
 [ $# -eq 0 ] && __usage
-SHORT="hv"
-LONG="help,verbose"
+SHORT="hvp"
+LONG="help,verbose,pretend"
 
 PARSED=$(getopt --options $SHORT --longoptions $LONG --name "$0" -- "$@")
 eval set -- "$PARSED"
 
 OPT_NUM=0
+VERBOSE=0
+DRY_RUN=0
 while true; do
   case "${1}" in
+	-p|--pretend)
+		VERBOSE=1
+		DRY_RUN=1
+		OPT_NUM=$((OPT_NUM+1))
+		break
+		;;
 	-v|--verbose)
 		VERBOSE=1
 		OPT_NUM=$((OPT_NUM+1))
@@ -144,7 +161,6 @@ while true; do
 		exit 0
 		;;
 	*) 
-		VERBOSE=0
 		break
 		;;
   esac
@@ -186,7 +202,7 @@ if [ $(curl -s -o /dev/null -w "%{http_code}" "${URL%/}/${OVERLAY%/}/${PACKAGE}"
 fi
 
 [ "$(echo ${PACKAGE%/} | tr -cd '/' | wc -c)" -gt 0 ] && IS_PACKAGE=1 || IS_PACKAGE=0
-mkdir -p "${PREFIX%/}/${PACKAGE}"
+__mkdir -p "${PREFIX%/}/${PACKAGE}"
 __get_files_rec "${URL%/}/${OVERLAY%/}/${PACKAGE}" "${PREFIX%/}/${PACKAGE}"
 ECLASSES=$(echo $ECLASSES | xargs -n1 | sort -u | xargs)
 [ ! -z "${ECLASSES}" ] && [ ! -z "${PACKAGE}" ] && __get_eclass
