@@ -15,6 +15,7 @@ Parameters
 Options
 -------
     -v, --verbose   tree print of downloaded files
+    -p, --pretend   display what will downloaded
     -h, --help      display this help and exit
 
 Examples
