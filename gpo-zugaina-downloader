@@ -131,13 +131,12 @@ LONG="help,verbose"
 PARSED=$(getopt --options $SHORT --longoptions $LONG --name "$0" -- "$@")
 eval set -- "$PARSED"
 
+OPT_NUM=0
 while true; do
   case "${1}" in
 	-v|--verbose)
 		VERBOSE=1
-		OVERLAY="${4}"
-		PACKAGE="${5}"
-		PREFIX="${3%/}/"
+		OPT_NUM=$((OPT_NUM+1))
 		break
 		;;
 	-h|--help) 
@@ -146,13 +145,16 @@ while true; do
 		;;
 	*) 
 		VERBOSE=0
-		OVERLAY="${3}"
-		PACKAGE="${4}"
-		PREFIX="${2%/}/"
 		break
 		;;
   esac
+  
 done
+
+PREFIX="${@:$((OPT_NUM+2)):1}"
+PREFIX="${PREFIX%/}/"
+OVERLAY="${@:$((OPT_NUM+3)):1}"
+PACKAGE="${@:$((OPT_NUM+4)):1}"
 
 URL="http://data.gpo.zugaina.org/"
 ECLASSES=""
