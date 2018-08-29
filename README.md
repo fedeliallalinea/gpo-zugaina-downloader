@@ -1,3 +1,5 @@
+**This package is deprecate in favour of [gpo-zugaina-dl](https://github.com/fedeliallalinea/gpo-zugaina-dl)**
+
 Name
 ----
 gpo-zugaina-downloader - Download overlay, category or package ebuilds from gpo.zugaina.org
